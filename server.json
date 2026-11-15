@@ -1,0 +1,44 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-11/server.schema.json",
+  "name": "io.github.Turbotailz/farmos-mcp",
+  "description": "Read and record farmOS 4.x assets, logs, plans, and terms over JSON:API. Stdio for local hosts, Streamable HTTP for ChatGPT and Gemini.",
+  "repository": {
+    "url": "https://github.com/Turbotailz/farmos-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "farmos-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "FARMOS_URL",
+          "description": "farmOS base URL, https except for localhost",
+          "isRequired": true,
+          "format": "string"
+        },
+        {
+          "name": "FARMOS_CLIENT_ID",
+          "description": "OAuth client id. Defaults to farm.",
+          "format": "string"
+        },
+        {
+          "name": "FARMOS_CLIENT_SECRET",
+          "description": "OAuth client secret for the client credentials grant",
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "FARMOS_ALLOW_WRITES",
+          "description": "Set to true to enable create and update tools",
+          "format": "boolean"
+        }
+      ]
+    }
+  ]
+}

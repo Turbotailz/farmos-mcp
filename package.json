@@ -1,0 +1,45 @@
+{
+  "name": "farmos-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for farmOS 4.x — read and record farm data over JSON:API for Cursor, ChatGPT, Gemini, and other MCP hosts",
+  "type": "module",
+  "bin": {
+    "farmos-mcp": "./dist/bin/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "start": "node dist/bin/cli.js",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "smoke": "npm run build && node dist/test/smoke.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "mcp",
+    "farmos",
+    "farm",
+    "jsonapi",
+    "modelcontextprotocol",
+    "typescript"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Turbotailz/farmos-mcp.git"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "typescript": "^5.9.0"
+  }
+}
