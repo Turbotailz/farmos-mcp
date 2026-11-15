@@ -30,7 +30,7 @@ If ChatGPT reports a redirect URI error, copy the URI from the error into `FARMO
 
 ## Gemini
 
-Add a custom MCP / extension endpoint of `https://farmos-mcp.dunslaw.com.au/mcp` and complete the same OAuth login. Gemini’s callback host `gemini.google.com` is allowed. A different host has to be added to `FARMOS_MCP_OAUTH_REDIRECTS`.
+Add a custom app with server URL `https://farmos-mcp.dunslaw.com.au/mcp`. Leave Client ID and Client secret empty, then click Next. Gemini registers itself. The redirect host it uses, `oauth-redirect.googleusercontent.com`, is allowed. The login page then asks for the shared access token.
 
 ## Claude (remote)
 

@@ -15,9 +15,11 @@ describe("oauth helpers", () => {
     assert.equal(safeEqual("abc", "abd"), false);
   });
 
-  it("allows ChatGPT and loopback redirects only", () => {
+  it("allows assistant redirects, including Gemini's Google redirect host", () => {
     assert.equal(redirectAllowed("https://chatgpt.com/connector/oauth/callback"), true);
     assert.equal(redirectAllowed("http://127.0.0.1:3344/callback"), true);
+    assert.equal(redirectAllowed("https://oauth-redirect.googleusercontent.com/r/farm"), true);
+    assert.equal(redirectAllowed("https://evil.googleusercontent.com/r/farm"), false);
     assert.equal(redirectAllowed("https://evil.example/steal"), false);
     assert.equal(redirectAllowed("https://example.com/ok", ["https://example.com/ok"]), true);
   });
@@ -65,6 +67,28 @@ describe("http server", () => {
     assert.equal(response.status, 200);
     const body = await response.json() as { result?: { serverInfo?: { name?: string } } };
     assert.equal(body.result?.serverInfo?.name, "farmos-mcp");
+  });
+
+  it("registers a Gemini client from the browser origin", async () => {
+    const response = await fetch(`${http.url}/register`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://gemini.google.com",
+      },
+      body: JSON.stringify({
+        client_name: "Gemini",
+        redirect_uris: ["https://oauth-redirect.googleusercontent.com/r/farmos-mcp"],
+        token_endpoint_auth_method: "none",
+      }),
+    });
+    assert.equal(response.status, 201);
+    assert.equal(response.headers.get("access-control-allow-origin"), "https://gemini.google.com");
+    const body = await response.json() as { client_id?: string; token_endpoint_auth_method?: string };
+    assert.ok(body.client_id);
+    assert.equal(body.token_endpoint_auth_method, "none");
+    const metadata = await fetch(`${http.url}/.well-known/oauth-protected-resource/mcp`);
+    assert.equal(metadata.status, 200);
   });
 
   it("exchanges an authorization code after the login form", async () => {

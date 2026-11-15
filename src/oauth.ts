@@ -10,6 +10,13 @@ const CHAT_HOSTS = new Set([
   "gemini.google.com",
 ]);
 
+/** Hosts Gemini Spark uses for the OAuth redirect. Exact host match only. */
+const GOOGLE_REDIRECT_HOSTS = new Set([
+  "oauth-redirect.googleusercontent.com",
+  "oauth-redirect-sandbox.googleusercontent.com",
+  "oauth-redirect-test.googleusercontent.com",
+]);
+
 export interface AuthCode {
   clientId: string;
   redirectUri: string;
@@ -41,8 +48,23 @@ export function redirectAllowed(uri: string, extra: string[] = []): boolean {
   }
   if (url.protocol === "http:" && isLoopbackHost(url.hostname)) return true;
   if (url.protocol !== "https:") return false;
-  if (CHAT_HOSTS.has(url.hostname)) return true;
+  if (CHAT_HOSTS.has(url.hostname) || GOOGLE_REDIRECT_HOSTS.has(url.hostname)) return true;
   return extra.some((allowed) => uri === allowed);
+}
+
+export function originAllowedHost(origin: string | undefined, extra: string[] = []): boolean {
+  if (!origin) return true;
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (url.protocol === "http:" && isLoopbackHost(url.hostname)) return true;
+  if (url.protocol === "https:" && (CHAT_HOSTS.has(url.hostname) || GOOGLE_REDIRECT_HOSTS.has(url.hostname))) {
+    return true;
+  }
+  return extra.includes(origin);
 }
 
 export function publicBase(request: { headers: { host?: string; "x-forwarded-proto"?: string | string[] } }, configured?: string): string {
