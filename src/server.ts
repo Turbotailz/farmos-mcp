@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { FarmClient } from "./client.js";
-import { loadConfig, VERSION, type FarmConfig } from "./config.js";
+import { loadConfig, VERSION } from "./config.js";
 import { errorResult, textResult } from "./mcp-result.js";
 
 const INSTRUCTIONS = [
@@ -21,8 +21,7 @@ const refSchema = z.object({
 
 const limitSchema = z.number().int().min(1).max(50).optional().describe("Page size, default 20, max 50");
 
-export function createMcpServer(config: FarmConfig = loadConfig()): McpServer {
-  const client = new FarmClient(config);
+export function createMcpServer(client: FarmClient = new FarmClient(loadConfig())): McpServer {
   const server = new McpServer(
     { name: "farmos-mcp", version: VERSION },
     { instructions: INSTRUCTIONS, maxToolInputElements: 200 },

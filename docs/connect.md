@@ -1,6 +1,6 @@
 # Connect an assistant
 
-The HTTP server has to be up and the hostname has to resolve. See [homelab.md](homelab.md). The shared secret is `FARMOS_MCP_HTTP_TOKEN` in the homelab env file. Give it to someone only if they should be able to read the farm (and write to it, once writes are turned on).
+The HTTP server has to be up and the hostname has to resolve. See [homelab.md](homelab.md). Each person signs in with their own farmOS username and password. Records are stored under that account. Usernames are `nik`, `sam`, `orestis`, `stavros`, and `achilleas`. Passwords are in `~/.config/farmos-mcp/accounts.txt` on Sam's Mac.
 
 ## Cursor on this machine
 
@@ -23,14 +23,14 @@ Prefer stdio. It does not need the public hostname.
 1. Plugins → Add custom MCP server.
 2. Server URL: `https://farmos-mcp.dunslaw.com.au/mcp`
 3. Authentication: OAuth.
-4. When the browser opens the farmOS MCP login, paste the shared access token.
+4. When the browser opens the farmOS MCP login, sign in with your farmOS username and password.
 5. Ask: “Use the farmOS app. What is the farm name, and which equipment assets exist?”
 
 If ChatGPT reports a redirect URI error, copy the URI from the error into `FARMOS_MCP_OAUTH_REDIRECTS` (comma-separated, exact match) and recreate the container.
 
 ## Gemini
 
-Add a custom app with server URL `https://farmos-mcp.dunslaw.com.au/mcp`. Leave Client ID and Client secret empty, then click Next. Gemini registers itself. The redirect host it uses, `oauth-redirect.googleusercontent.com`, is allowed. The login page then asks for the shared access token.
+Add a custom app with server URL `https://farmos-mcp.dunslaw.com.au/mcp`. Leave Client ID and Client secret empty, then click Next. Gemini registers itself. The login page then asks for your farmOS username and password. An existing Gemini connection that used the shared token has to be removed and added again.
 
 ## Claude (remote)
 

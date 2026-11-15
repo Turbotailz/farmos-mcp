@@ -76,6 +76,18 @@ interface JsonApiResource {
 
 const LOG_STATUS = new Set(["pending", "done", "abandoned"]);
 
+export interface FarmSession {
+  username: string;
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt: number;
+}
+
+export interface FarmActor {
+  username: string;
+  getAccessToken(): Promise<string>;
+}
+
 export class FarmClient {
   private token?: { value: string; expiresAt: number };
   private types?: ResourceType[];
@@ -83,6 +95,7 @@ export class FarmClient {
   constructor(
     readonly config: FarmConfig,
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly actor?: FarmActor,
   ) {}
 
   async farmInfo(): Promise<Record<string, unknown>> {
@@ -93,6 +106,7 @@ export class FarmClient {
       version: doc.meta?.farm?.version ?? null,
       system_of_measurement: doc.meta?.farm?.system_of_measurement ?? null,
       url: this.config.url,
+      user: this.actor?.username ?? null,
       user_id: me?.meta?.id ?? null,
       allow_writes: this.config.allowWrites,
       allow_delete: this.config.allowDelete,
@@ -409,6 +423,7 @@ export class FarmClient {
   }
 
   private async accessToken(): Promise<string> {
+    if (this.actor) return this.actor.getAccessToken();
     if (this.token && this.token.expiresAt > Date.now() + 30_000) return this.token.value;
     const url = resolveFarmUrl(baseUrl(this.config), "/oauth/token");
     const form = new URLSearchParams();
@@ -425,7 +440,11 @@ export class FarmClient {
     }
     const response = await this.fetchChecked(url, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+        "User-Agent": "farmos-mcp",
+      },
       body: form.toString(),
     });
     const payload = await response.json().catch(() => ({})) as {
@@ -446,6 +465,70 @@ export class FarmClient {
     };
     return payload.access_token;
   }
+}
+
+export async function loginWithPassword(
+  config: FarmConfig,
+  username: string,
+  password: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<FarmSession> {
+  const token = await requestFarmToken(config, fetchImpl, {
+    grant_type: "password",
+    client_id: "farm",
+    username,
+    password,
+    scope: "farm_manager",
+  });
+  return { username, ...token };
+}
+
+export async function refreshFarmSession(
+  config: FarmConfig,
+  session: FarmSession,
+  fetchImpl: typeof fetch = fetch,
+): Promise<FarmSession> {
+  if (!session.refreshToken) throw new Error("Sign in to farmOS again");
+  const token = await requestFarmToken(config, fetchImpl, {
+    grant_type: "refresh_token",
+    client_id: "farm",
+    refresh_token: session.refreshToken,
+  });
+  return { username: session.username, ...token, refreshToken: token.refreshToken ?? session.refreshToken };
+}
+
+async function requestFarmToken(
+  config: FarmConfig,
+  fetchImpl: typeof fetch,
+  fields: Record<string, string>,
+): Promise<{ accessToken: string; refreshToken?: string; expiresAt: number }> {
+  const url = resolveFarmUrl(baseUrl(config), "/oauth/token");
+  const response = await fetchImpl(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+      "User-Agent": "farmos-mcp",
+    },
+    body: new URLSearchParams(fields),
+  });
+  const payload = await response.json().catch(() => ({})) as {
+    access_token?: string;
+    refresh_token?: string;
+    expires_in?: number | string;
+    error_description?: string;
+    error?: string;
+    message?: string;
+  };
+  if (!response.ok || !payload.access_token) {
+    const detail = payload.error_description || payload.message || payload.error || response.statusText;
+    throw new Error(`farmOS login failed (${response.status}): ${detail}`);
+  }
+  return {
+    accessToken: payload.access_token,
+    refreshToken: payload.refresh_token,
+    expiresAt: Date.now() + Number(payload.expires_in || 300) * 1000,
+  };
 }
 
 interface FilterInput {

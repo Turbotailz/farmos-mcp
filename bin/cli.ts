@@ -30,7 +30,7 @@ Environment:
   FARMOS_ENV_FILE            env file loaded when a variable is unset
   FARMOS_MCP_HOST            HTTP bind host (default 127.0.0.1)
   FARMOS_MCP_PORT            HTTP port (default 8787)
-  FARMOS_MCP_HTTP_TOKEN      bearer required off loopback, and for ChatGPT login
+  FARMOS_MCP_HTTP_TOKEN      unused; HTTP login is a farmOS username and password
   FARMOS_MCP_PUBLIC_URL      public https origin advertised to OAuth clients
   FARMOS_MCP_STATE_DIR       where refresh tokens are stored
 `);
@@ -54,7 +54,6 @@ if (args.includes("--http")) {
   const http = await startHttpServer({
     host,
     port,
-    token: process.env.FARMOS_MCP_HTTP_TOKEN?.trim() || undefined,
     publicUrl: process.env.FARMOS_MCP_PUBLIC_URL?.trim() || undefined,
     extraRedirects: (process.env.FARMOS_MCP_OAUTH_REDIRECTS || "").split(",").map((item) => item.trim()).filter(Boolean),
     stateFile: stateDir ? join(stateDir, "refresh-tokens.json") : undefined,

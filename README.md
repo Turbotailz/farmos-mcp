@@ -2,7 +2,9 @@
 
 MCP server for a [farmOS](https://farmos.org) 4.x site. It speaks JSON:API, so the same server works in Cursor over stdio and in ChatGPT or Gemini over Streamable HTTP.
 
-Reads are on by default. Creates and updates stay off until `FARMOS_ALLOW_WRITES=true`. There is no delete tool. The server will not create users, roles, or configuration, and it will only call the host in `FARMOS_URL`.
+Creates and updates stay off until `FARMOS_ALLOW_WRITES=true`. There is no delete tool. The server will not create users, roles, or configuration, and it will only call the host in `FARMOS_URL`.
+
+The HTTP login is a farmOS username and password. Each assistant connection then acts as that person. Stdio still uses the client credentials in the env file.
 
 ## Tools
 

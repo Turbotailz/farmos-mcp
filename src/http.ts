@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isLoopbackHost } from "./config.js";
+import { FarmClient, loginWithPassword, refreshFarmSession, type FarmSession } from "./client.js";
+import { loadConfig } from "./config.js";
 import { createMcpServer } from "./server.js";
 import {
   loginPage,
@@ -9,33 +10,24 @@ import {
   requestOriginAllowed,
   publicBase,
   redirectAllowed,
-  safeEqual,
 } from "./oauth.js";
 
 export interface HttpOptions {
   host: string;
   port: number;
-  token?: string;
   publicUrl?: string;
   extraRedirects?: string[];
   stateFile?: string;
-}
-
-export function assertHttpBind(host: string, token: string | undefined): void {
-  if (!isLoopbackHost(host) && !token) {
-    throw new Error("FARMOS_MCP_HTTP_TOKEN is required when FARMOS_MCP_HOST is not a loopback address");
-  }
+  authenticate?: (username: string, password: string) => Promise<FarmSession>;
 }
 
 export async function startHttpServer(options: HttpOptions): Promise<{ url: string; close: () => Promise<void> }> {
-  assertHttpBind(options.host, options.token);
-  const broker = options.token
-    ? new OauthBroker(options.token, options.stateFile)
-    : undefined;
+  const broker = new OauthBroker(options.stateFile);
+  const authenticate = options.authenticate ?? ((username, password) => loginWithPassword(loadConfig(), username, password));
 
   const server = createServer(async (req, res) => {
     try {
-      await route(req, res, options, broker);
+      await route(req, res, options, broker, authenticate);
     } catch (err) {
       if (res.headersSent) return;
       const message = err instanceof Error ? err.message : "Request failed";
@@ -59,7 +51,8 @@ async function route(
   req: IncomingMessage,
   res: ServerResponse,
   options: HttpOptions,
-  broker: OauthBroker | undefined,
+  broker: OauthBroker,
+  authenticate: (username: string, password: string) => Promise<FarmSession>,
 ): Promise<void> {
   const url = new URL(req.url || "/", "http://localhost");
   if (req.method === "OPTIONS") {
@@ -117,7 +110,7 @@ async function route(
     return;
   }
   if (url.pathname === "/authorize") {
-    await authorize(req, res, options, broker);
+    await authorize(req, res, options, broker, authenticate);
     return;
   }
   if (req.method === "POST" && url.pathname === "/token") {
@@ -125,7 +118,7 @@ async function route(
     return;
   }
   if (url.pathname === "/mcp") {
-    await mcp(req, res, options);
+    await mcp(req, res, options, broker);
     return;
   }
   sendJson(res, 404, { error: "Not found" });
@@ -135,9 +128,9 @@ async function authorize(
   req: IncomingMessage,
   res: ServerResponse,
   options: HttpOptions,
-  broker: OauthBroker | undefined,
+  broker: OauthBroker,
+  authenticate: (username: string, password: string) => Promise<FarmSession>,
 ): Promise<void> {
-  if (!options.token || !broker) throw new Error("OAuth is not configured");
   const params = req.method === "GET"
     ? new URL(req.url || "/", "http://localhost").searchParams
     : new URLSearchParams(await readRaw(req));
@@ -151,12 +144,17 @@ async function authorize(
     sendHtml(res, 200, loginPage(params));
     return;
   }
-  const provided = params.get("access_token") || "";
-  if (!safeEqual(provided, options.token)) {
-    sendHtml(res, 401, loginPage(params, "That token was not accepted."));
+  const username = params.get("username") || "";
+  const password = params.get("password") || "";
+  let session: FarmSession;
+  try {
+    session = await authenticate(username, password);
+  } catch (err) {
+    console.error(`farmos-mcp: login failed for ${username}: ${err instanceof Error ? err.message : err}`);
+    sendHtml(res, 401, loginPage(params, "Those farmOS credentials were not accepted."));
     return;
   }
-  const code = broker.issueCode({ clientId, redirectUri, challenge });
+  const code = broker.issueCode({ clientId, redirectUri, challenge, session });
   const target = new URL(redirectUri);
   target.searchParams.set("code", code);
   const state = params.get("state");
@@ -165,8 +163,7 @@ async function authorize(
   res.end();
 }
 
-async function token(req: IncomingMessage, res: ServerResponse, broker: OauthBroker | undefined): Promise<void> {
-  if (!broker) throw new Error("OAuth is not configured");
+async function token(req: IncomingMessage, res: ServerResponse, broker: OauthBroker): Promise<void> {
   const params = new URLSearchParams(await readRaw(req));
   const grant = params.get("grant_type");
   const clientId = params.get("client_id") || "";
@@ -193,27 +190,38 @@ async function token(req: IncomingMessage, res: ServerResponse, broker: OauthBro
   }
 }
 
-async function mcp(req: IncomingMessage, res: ServerResponse, options: HttpOptions): Promise<void> {
+async function mcp(req: IncomingMessage, res: ServerResponse, options: HttpOptions, broker: OauthBroker): Promise<void> {
   if (req.method !== "POST") {
     sendJson(res, 405, { error: "POST only" });
     return;
   }
-  if (options.token) {
-    const header = req.headers.authorization || "";
-    const presented = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
-    if (!presented || !safeEqual(presented, options.token)) {
-      const base = publicBase(req, options.publicUrl);
-      res.writeHead(401, {
-        ...corsHeaders(req),
-        "Content-Type": "application/json",
-        "WWW-Authenticate": `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource/mcp"`,
-      });
-      res.end(JSON.stringify({ error: "Unauthorized" }));
-      return;
-    }
+  const header = req.headers.authorization || "";
+  const presented = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+  const session = presented ? broker.getSession(presented) : undefined;
+  if (!session) {
+    const base = publicBase(req, options.publicUrl);
+    res.writeHead(401, {
+      ...corsHeaders(req),
+      "Content-Type": "application/json",
+      "WWW-Authenticate": `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource/mcp"`,
+    });
+    res.end(JSON.stringify({ error: "Unauthorized" }));
+    return;
   }
   const body = await readBody(req);
-  const mcpServer = createMcpServer();
+  const config = loadConfig();
+  const actor = {
+    username: session.username,
+    getAccessToken: async () => {
+      const current = broker.getSession(presented);
+      if (!current) throw new Error("Sign in to farmOS again");
+      if (current.expiresAt > Date.now() + 30_000) return current.accessToken;
+      const refreshed = await refreshFarmSession(config, current);
+      broker.updateSession(presented, refreshed);
+      return refreshed.accessToken;
+    },
+  };
+  const mcpServer = createMcpServer(new FarmClient(config, fetch, actor));
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,

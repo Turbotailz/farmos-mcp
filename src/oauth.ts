@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import type { FarmSession } from "./client.js";
 import { isLoopbackHost } from "./config.js";
 
 const CHAT_HOSTS = new Set([
@@ -22,11 +23,25 @@ export interface AuthCode {
   redirectUri: string;
   challenge: string;
   exp: number;
+  session: FarmSession;
 }
 
 export interface RefreshRecord {
+  accessToken: string;
   clientId: string;
   exp: number;
+}
+
+interface AccessRecord {
+  clientId: string;
+  exp: number;
+  session: FarmSession;
+}
+
+interface StoredSessions {
+  version: 2;
+  access: Record<string, AccessRecord>;
+  refresh: Record<string, RefreshRecord>;
 }
 
 export function safeEqual(a: string, b: string): boolean {
@@ -90,17 +105,19 @@ export function publicBase(request: { headers: { host?: string; "x-forwarded-pro
 
 export class OauthBroker {
   private codes = new Map<string, AuthCode>();
+  private access = new Map<string, AccessRecord>();
   private refresh = new Map<string, RefreshRecord>();
 
-  constructor(
-    private readonly accessToken: string,
-    private readonly stateFile?: string,
-  ) {
+  constructor(private readonly stateFile?: string) {
     if (!stateFile) return;
     try {
-      const parsed = JSON.parse(readFileSync(stateFile, "utf8")) as Record<string, RefreshRecord>;
+      const parsed = JSON.parse(readFileSync(stateFile, "utf8")) as StoredSessions;
+      if (parsed.version !== 2) return;
       const now = Date.now();
-      for (const [token, record] of Object.entries(parsed)) {
+      for (const [token, record] of Object.entries(parsed.access ?? {})) {
+        if (record.exp > now) this.access.set(token, record);
+      }
+      for (const [token, record] of Object.entries(parsed.refresh ?? {})) {
         if (record.exp > now) this.refresh.set(token, record);
       }
     } catch {
@@ -108,7 +125,7 @@ export class OauthBroker {
     }
   }
 
-  issueCode(input: { clientId: string; redirectUri: string; challenge: string }): string {
+  issueCode(input: { clientId: string; redirectUri: string; challenge: string; session: FarmSession }): string {
     this.prune();
     const code = randomBytes(32).toString("base64url");
     this.codes.set(code, { ...input, exp: Date.now() + 10 * 60 * 1000 });
@@ -123,7 +140,7 @@ export class OauthBroker {
       throw new Error("Authorization code does not match this client");
     }
     if (pkceS256(input.verifier) !== record.challenge) throw new Error("PKCE verification failed");
-    return { accessToken: this.accessToken, refreshToken: this.issueRefresh(input.clientId) };
+    return this.issuePair(record.clientId, record.session);
   }
 
   exchangeRefresh(token: string, clientId: string): { accessToken: string; refreshToken: string } {
@@ -131,16 +148,35 @@ export class OauthBroker {
     if (!record || record.exp < Date.now() || record.clientId !== clientId) {
       throw new Error("Refresh token is invalid or expired");
     }
+    const current = this.access.get(record.accessToken);
+    if (!current) throw new Error("Refresh token is invalid or expired");
     this.refresh.delete(token);
-    this.persist();
-    return { accessToken: this.accessToken, refreshToken: this.issueRefresh(clientId) };
+    this.access.delete(record.accessToken);
+    return this.issuePair(clientId, current.session);
   }
 
-  private issueRefresh(clientId: string): string {
-    const token = randomBytes(32).toString("base64url");
-    this.refresh.set(token, { clientId, exp: Date.now() + 90 * 24 * 60 * 60 * 1000 });
+  getSession(accessToken: string): FarmSession | undefined {
+    const record = this.access.get(accessToken);
+    if (!record || record.exp < Date.now()) return undefined;
+    return record.session;
+  }
+
+  updateSession(accessToken: string, session: FarmSession): void {
+    const record = this.access.get(accessToken);
+    if (!record) return;
+    record.session = session;
     this.persist();
-    return token;
+  }
+
+  private issuePair(clientId: string, session: FarmSession): { accessToken: string; refreshToken: string } {
+    const accessToken = randomBytes(32).toString("base64url");
+    const refreshToken = randomBytes(32).toString("base64url");
+    const accessExp = Date.now() + 30 * 24 * 60 * 60 * 1000;
+    const refreshExp = Date.now() + 90 * 24 * 60 * 60 * 1000;
+    this.access.set(accessToken, { clientId, exp: accessExp, session });
+    this.refresh.set(refreshToken, { accessToken, clientId, exp: refreshExp });
+    this.persist();
+    return { accessToken, refreshToken };
   }
 
   private prune(): void {
@@ -153,10 +189,13 @@ export class OauthBroker {
   private persist(): void {
     if (!this.stateFile) return;
     mkdirSync(dirname(this.stateFile), { recursive: true });
-    const payload: Record<string, RefreshRecord> = {};
     const now = Date.now();
+    const payload: StoredSessions = { version: 2, access: {}, refresh: {} };
+    for (const [token, record] of this.access) {
+      if (record.exp > now) payload.access[token] = record;
+    }
     for (const [token, record] of this.refresh) {
-      if (record.exp > now) payload[token] = record;
+      if (record.exp > now) payload.refresh[token] = record;
     }
     writeFileSync(this.stateFile, JSON.stringify(payload), { mode: 0o600 });
   }
@@ -182,7 +221,7 @@ export function loginPage(params: URLSearchParams, error?: string): string {
     h1 { font-size: 1.6rem; margin: 0 0 0.5rem; }
     p { margin: 0 0 1rem; }
     label { display: block; font-size: 0.9rem; margin-bottom: 0.35rem; }
-    input[type="password"] { width: 100%; box-sizing: border-box; padding: 0.6rem; font: inherit; }
+    input { width: 100%; box-sizing: border-box; padding: 0.6rem; font: inherit; margin-bottom: 0.7rem; }
     button { margin-top: 0.8rem; padding: 0.55rem 0.9rem; font: inherit; background: #245c3a; color: white; border: 0; }
     .error { color: #8a1f1f; }
   </style>
@@ -190,12 +229,14 @@ export function loginPage(params: URLSearchParams, error?: string): string {
 <body>
   <main>
     <h1>farmOS MCP</h1>
-    <p>Enter the shared access token to connect this assistant to the farm.</p>
+    <p>Sign in with your farmOS account. What you record is saved under your name.</p>
     ${message}
     <form method="post" action="/authorize">
       ${hidden}
-      <label for="access_token">Access token</label>
-      <input id="access_token" name="access_token" type="password" autocomplete="current-password" required>
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" autocomplete="username" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
       <button type="submit">Connect</button>
     </form>
   </main>
