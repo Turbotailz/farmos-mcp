@@ -52,8 +52,20 @@ export function redirectAllowed(uri: string, extra: string[] = []): boolean {
   return extra.some((allowed) => uri === allowed);
 }
 
+export function requestOriginAllowed(origin: string | undefined, requestHost: string | undefined, extra: string[] = []): boolean {
+  if (!origin || origin === "null") return true;
+  try {
+    const originHost = new URL(origin).host;
+    const host = (requestHost || "").split(",")[0].trim();
+    if (host && originHost === host) return true;
+  } catch {
+    return false;
+  }
+  return originAllowedHost(origin, extra);
+}
+
 export function originAllowedHost(origin: string | undefined, extra: string[] = []): boolean {
-  if (!origin) return true;
+  if (!origin || origin === "null") return true;
   let url: URL;
   try {
     url = new URL(origin);

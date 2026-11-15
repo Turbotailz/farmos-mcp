@@ -6,7 +6,7 @@ import { createMcpServer } from "./server.js";
 import {
   loginPage,
   OauthBroker,
-  originAllowedHost,
+  requestOriginAllowed,
   publicBase,
   redirectAllowed,
   safeEqual,
@@ -64,7 +64,7 @@ async function route(
   const url = new URL(req.url || "/", "http://localhost");
   if (req.method === "OPTIONS") {
     if (!originAllowed(req)) {
-      sendJson(res, 403, { error: "Origin is not allowed" }, req);
+      rejectOrigin(req, res);
       return;
     }
     res.writeHead(204, corsHeaders(req));
@@ -72,7 +72,7 @@ async function route(
     return;
   }
   if (!originAllowed(req)) {
-    sendJson(res, 403, { error: "Origin is not allowed" }, req);
+    rejectOrigin(req, res);
     return;
   }
   if (req.method === "GET" && url.pathname === "/health") {
@@ -226,8 +226,15 @@ async function mcp(req: IncomingMessage, res: ServerResponse, options: HttpOptio
 }
 
 function originAllowed(req: IncomingMessage): boolean {
+  const forwarded = req.headers["x-forwarded-host"];
+  const requestHost = Array.isArray(forwarded) ? forwarded[0] : forwarded || req.headers.host;
   const extra = (process.env.FARMOS_MCP_ALLOWED_ORIGINS || "").split(",").map((item) => item.trim()).filter(Boolean);
-  return originAllowedHost(req.headers.origin, extra);
+  return requestOriginAllowed(req.headers.origin, requestHost, extra);
+}
+
+function rejectOrigin(req: IncomingMessage, res: ServerResponse): void {
+  console.error(`farmos-mcp: rejected origin ${req.headers.origin ?? ""} ${req.method} ${req.url ?? ""}`);
+  sendJson(res, 403, { error: "Origin is not allowed" }, req);
 }
 
 function isWellKnown(pathname: string, name: string): boolean {

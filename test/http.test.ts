@@ -6,7 +6,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { pkceS256, redirectAllowed, safeEqual } from "../src/oauth.js";
+import { pkceS256, redirectAllowed, requestOriginAllowed, safeEqual } from "../src/oauth.js";
 import { startHttpServer } from "../src/http.js";
 
 describe("oauth helpers", () => {
@@ -22,6 +22,12 @@ describe("oauth helpers", () => {
     assert.equal(redirectAllowed("https://evil.googleusercontent.com/r/farm"), false);
     assert.equal(redirectAllowed("https://evil.example/steal"), false);
     assert.equal(redirectAllowed("https://example.com/ok", ["https://example.com/ok"]), true);
+  });
+
+  it("allows the login form to post back to this server", () => {
+    assert.equal(requestOriginAllowed("https://farmos-mcp.dunslaw.com.au", "farmos-mcp.dunslaw.com.au"), true);
+    assert.equal(requestOriginAllowed("null", "farmos-mcp.dunslaw.com.au"), true);
+    assert.equal(requestOriginAllowed("https://evil.example", "farmos-mcp.dunslaw.com.au"), false);
   });
 });
 
@@ -89,6 +95,29 @@ describe("http server", () => {
     assert.equal(body.token_endpoint_auth_method, "none");
     const metadata = await fetch(`${http.url}/.well-known/oauth-protected-resource/mcp`);
     assert.equal(metadata.status, 200);
+  });
+
+  it("accepts the login form posted from this server", async () => {
+    const verifier = "b".repeat(48);
+    const redirect = "https://oauth-redirect.googleusercontent.com/r/farmos-mcp";
+    const response = await fetch(`${http.url}/authorize`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        origin: http.url,
+      },
+      body: new URLSearchParams({
+        client_id: "gemini",
+        redirect_uri: redirect,
+        state: "form",
+        code_challenge: pkceS256(verifier),
+        code_challenge_method: "S256",
+        access_token: "shared-token",
+      }),
+      redirect: "manual",
+    });
+    assert.equal(response.status, 302);
+    assert.match(response.headers.get("location") || "", /^https:\/\/oauth-redirect\.googleusercontent\.com\//);
   });
 
   it("exchanges an authorization code after the login form", async () => {
