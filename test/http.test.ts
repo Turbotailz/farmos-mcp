@@ -206,6 +206,39 @@ async function signIn(base: string, username: string, password: string): Promise
   return issued.access_token;
 }
 
+const bot = await startHttpServer({
+  host: "127.0.0.1",
+  port: 0,
+  botToken: "bot-secret",
+});
+after(() => bot.close());
+
+describe("bot token", () => {
+  it("accepts the bot bearer without a browser login", async () => {
+    const response = await fetch(`${bot.url}/mcp`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer bot-secret",
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-03-26",
+          capabilities: {},
+          clientInfo: { name: "grok", version: "0" },
+        },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { result?: { serverInfo?: { name?: string } } };
+    assert.equal(body.result?.serverInfo?.name, "farmos-mcp");
+  });
+});
+
 describe("bind policy", () => {
   it("rejects a bearer token that is not a signed-in user", async () => {
     const response = await fetch(`${http.url}/mcp`, {

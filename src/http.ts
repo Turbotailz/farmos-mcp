@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { FarmClient, loginWithPassword, refreshFarmSession, type FarmSession } from "./client.js";
+import { FarmClient, loginWithPassword, refreshFarmSession, type FarmActor, type FarmSession } from "./client.js";
 import { loadConfig } from "./config.js";
 import { createMcpServer } from "./server.js";
 import {
@@ -10,6 +10,7 @@ import {
   requestOriginAllowed,
   publicBase,
   redirectAllowed,
+  safeEqual,
 } from "./oauth.js";
 
 export interface HttpOptions {
@@ -18,6 +19,7 @@ export interface HttpOptions {
   publicUrl?: string;
   extraRedirects?: string[];
   stateFile?: string;
+  botToken?: string;
   authenticate?: (username: string, password: string) => Promise<FarmSession>;
 }
 
@@ -197,6 +199,12 @@ async function mcp(req: IncomingMessage, res: ServerResponse, options: HttpOptio
   }
   const header = req.headers.authorization || "";
   const presented = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+  if (options.botToken && presented && safeEqual(presented, options.botToken)) {
+    const body = await readBody(req);
+    const mcpServer = createMcpServer(new FarmClient(loadConfig(), fetch, await botActor()));
+    await serveMcp(req, res, mcpServer, body);
+    return;
+  }
   const session = presented ? broker.getSession(presented) : undefined;
   if (!session) {
     const base = publicBase(req, options.publicUrl);
@@ -221,7 +229,30 @@ async function mcp(req: IncomingMessage, res: ServerResponse, options: HttpOptio
       return refreshed.accessToken;
     },
   };
-  const mcpServer = createMcpServer(new FarmClient(config, fetch, actor));
+  await serveMcp(req, res, createMcpServer(new FarmClient(config, fetch, actor)), body);
+}
+
+let cachedBot: FarmSession | undefined;
+
+async function botActor(): Promise<FarmActor> {
+  const config = loadConfig();
+  return {
+    username: config.username || "bot",
+    getAccessToken: async () => {
+      if (!config.username || !config.password) {
+        throw new Error("Set FARMOS_USERNAME and FARMOS_PASSWORD for the bot token");
+      }
+      if (!cachedBot || cachedBot.expiresAt <= Date.now() + 30_000) {
+        cachedBot = cachedBot?.refreshToken
+          ? await refreshFarmSession(config, cachedBot)
+          : await loginWithPassword(config, config.username, config.password);
+      }
+      return cachedBot.accessToken;
+    },
+  };
+}
+
+async function serveMcp(req: IncomingMessage, res: ServerResponse, mcpServer: ReturnType<typeof createMcpServer>, body: unknown): Promise<void> {
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,

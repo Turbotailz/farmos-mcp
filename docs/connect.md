@@ -2,20 +2,25 @@
 
 The HTTP server has to be up and the hostname has to resolve. See [homelab.md](homelab.md). Each person signs in with their own farmOS username and password. Records are stored under that account. Usernames are `nik`, `sam`, `orestis`, `stavros`, and `achilleas`. Passwords are in `~/.config/farmos-mcp/accounts.txt` on Sam's Mac.
 
-## Cursor on this machine
+## Cursor
 
-Prefer stdio. It does not need the public hostname.
+Already configured in `~/.cursor/mcp.json` as `farmos`. It runs on this Mac and signs in as `sam`. Reload the Cursor window after a credential change. Ask: "Use farmOS. Who am I signed in as?"
 
-```json
-{
-  "mcpServers": {
-    "farmos": {
-      "command": "node",
-      "args": ["/absolute/path/to/farmos-mcp/dist/bin/cli.js"],
-      "env": { "FARMOS_ENV_FILE": "/absolute/path/to/dunslaw.env" }
-    }
-  }
-}
+## Grok bot
+
+Grok's servers call the public URL and send a bearer token. They do not open the browser login. The token is `FARMOS_MCP_HTTP_TOKEN` in `~/.config/farmos-mcp/dunslaw.env`. The bot acts as `sam`.
+
+1. Open [grok.com/connectors](https://grok.com/connectors).
+2. New Connector, Custom.
+3. URL: `https://farmos-mcp.dunslaw.com.au/mcp`
+4. Header: `Authorization: Bearer <the token>`
+
+Or, if the `grok` CLI is signed in:
+
+```bash
+set -a; source ~/.config/farmos-mcp/dunslaw.env; set +a
+grok mcp add --transport http farmos https://farmos-mcp.dunslaw.com.au/mcp \
+  --header "Authorization: Bearer ${FARMOS_MCP_HTTP_TOKEN}"
 ```
 
 ## ChatGPT

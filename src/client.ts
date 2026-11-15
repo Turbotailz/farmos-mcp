@@ -106,7 +106,7 @@ export class FarmClient {
       version: doc.meta?.farm?.version ?? null,
       system_of_measurement: doc.meta?.farm?.system_of_measurement ?? null,
       url: this.config.url,
-      user: this.actor?.username ?? null,
+      user: this.actor?.username ?? this.config.username ?? null,
       user_id: me?.meta?.id ?? null,
       allow_writes: this.config.allowWrites,
       allow_delete: this.config.allowDelete,
@@ -427,15 +427,15 @@ export class FarmClient {
     if (this.token && this.token.expiresAt > Date.now() + 30_000) return this.token.value;
     const url = resolveFarmUrl(baseUrl(this.config), "/oauth/token");
     const form = new URLSearchParams();
-    form.set("client_id", this.config.clientId);
     form.set("scope", this.config.scope);
     if (this.config.username && this.config.password) {
       form.set("grant_type", "password");
+      form.set("client_id", "farm");
       form.set("username", this.config.username);
       form.set("password", this.config.password);
-      if (this.config.clientSecret) form.set("client_secret", this.config.clientSecret);
     } else {
       form.set("grant_type", "client_credentials");
+      form.set("client_id", this.config.clientId);
       form.set("client_secret", this.config.clientSecret || "");
     }
     const response = await this.fetchChecked(url, {
