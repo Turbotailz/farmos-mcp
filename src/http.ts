@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { FarmClient, loginWithPassword, refreshFarmSession, type FarmActor, type FarmSession } from "./client.js";
+import { singleFlight } from "./single-flight.js";
 import { loadConfig } from "./config.js";
 import { createMcpServer } from "./server.js";
 import {
@@ -220,14 +221,14 @@ async function mcp(req: IncomingMessage, res: ServerResponse, options: HttpOptio
   const config = loadConfig();
   const actor = {
     username: session.username,
-    getAccessToken: async () => {
+    getAccessToken: () => singleFlight(`user:${presented}`, async () => {
       const current = broker.getSession(presented);
       if (!current) throw new Error("Sign in to farmOS again");
       if (current.expiresAt > Date.now() + 30_000) return current.accessToken;
       const refreshed = await refreshFarmSession(config, current);
       broker.updateSession(presented, refreshed);
       return refreshed.accessToken;
-    },
+    }),
   };
   await serveMcp(req, res, createMcpServer(new FarmClient(config, fetch, actor)), body);
 }
@@ -238,7 +239,7 @@ async function botActor(): Promise<FarmActor> {
   const config = loadConfig();
   return {
     username: config.username || "bot",
-    getAccessToken: async () => {
+    getAccessToken: () => singleFlight("bot", async () => {
       if (!config.username || !config.password) {
         throw new Error("Set FARMOS_USERNAME and FARMOS_PASSWORD for the bot token");
       }
@@ -248,7 +249,7 @@ async function botActor(): Promise<FarmActor> {
           : await loginWithPassword(config, config.username, config.password);
       }
       return cachedBot.accessToken;
-    },
+    }),
   };
 }
 

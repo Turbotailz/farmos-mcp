@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { FarmClient } from "../src/client.js";
 import { assertBaseUrl, loadConfig, resolveFarmUrl, type FarmConfig } from "../src/config.js";
+import { singleFlight } from "../src/single-flight.js";
 import { toFraction } from "../src/summarize.js";
 
 const baseConfig: FarmConfig = {
@@ -132,5 +133,38 @@ describe("FarmClient", () => {
     const client = new FarmClient(baseConfig, fetchImpl);
     const info = await client.farmInfo();
     assert.equal(info.name, "Duns Law");
+  });
+
+  it("returns an empty plan list when the farm has no plan types", async () => {
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.endsWith("/oauth/token")) return json(200, { access_token: "t", expires_in: 3600 });
+      return json(200, {
+        links: { "asset--land": { href: "https://farm.example.com/api/asset/land" } },
+      });
+    };
+    const client = new FarmClient(baseConfig, fetchImpl);
+    const plans = await client.listPlans({});
+    assert.deepEqual(plans.records, []);
+    assert.equal(plans.warnings.length, 1);
+  });
+});
+
+describe("singleFlight", () => {
+  it("runs one job when callers overlap", async () => {
+    let started = 0;
+    const first = singleFlight("refresh", async () => {
+      started += 1;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return "token";
+    });
+    const second = singleFlight("refresh", async () => {
+      started += 1;
+      return "other";
+    });
+    const [a, b] = await Promise.all([first, second]);
+    assert.equal(a, "token");
+    assert.equal(b, "token");
+    assert.equal(started, 1);
   });
 });

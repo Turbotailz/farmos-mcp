@@ -1,4 +1,5 @@
 import { baseUrl, resolveFarmUrl, type FarmConfig } from "./config.js";
+import { singleFlight } from "./single-flight.js";
 import { assertWritableEntity, assertWrites } from "./guard.js";
 import { summarizeRecord, toFraction, toUnix, type RecordSummary, type ResourceRef } from "./summarize.js";
 
@@ -90,6 +91,7 @@ export interface FarmActor {
 
 export class FarmClient {
   private token?: { value: string; expiresAt: number };
+  private tokenFlight?: Promise<string>;
   private types?: ResourceType[];
 
   constructor(
@@ -289,7 +291,10 @@ export class FarmClient {
       return type.entity === entity && (!bundle || type.bundle === bundle);
     });
     if (!types.length) {
-      throw new Error(bundle ? `No ${entity} bundle named ${bundle}` : `No ${entity} bundles on this farmOS`);
+      const message = bundle
+        ? `No ${entity} bundle named ${bundle}`
+        : `No ${entity} bundles on this farmOS`;
+      return { records: [], truncated: false, warnings: [message] };
     }
     const warnings: string[] = [];
     const records: RecordSummary[] = [];
@@ -424,6 +429,14 @@ export class FarmClient {
 
   private async accessToken(): Promise<string> {
     if (this.actor) return this.actor.getAccessToken();
+    if (this.token && this.token.expiresAt > Date.now() + 30_000) return this.token.value;
+    this.tokenFlight ??= this.fetchAccessToken().finally(() => {
+      this.tokenFlight = undefined;
+    });
+    return this.tokenFlight;
+  }
+
+  private async fetchAccessToken(): Promise<string> {
     if (this.token && this.token.expiresAt > Date.now() + 30_000) return this.token.value;
     const url = resolveFarmUrl(baseUrl(this.config), "/oauth/token");
     const form = new URLSearchParams();
