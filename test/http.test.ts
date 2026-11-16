@@ -59,6 +59,14 @@ describe("http server", () => {
     assert.match(response.headers.get("www-authenticate") || "", /oauth-protected-resource/);
   });
 
+  it("serves a farm icon instead of a missing favicon", async () => {
+    const response = await fetch(`${http.url}/icon.png`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "image/png");
+    const bytes = Buffer.from(await response.arrayBuffer());
+    assert.equal(bytes.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+  });
+
   it("answers initialize for the signed-in user", async () => {
     const access = await signIn(http.url, "sam", "secret");
     const response = await fetch(`${http.url}/mcp`, {

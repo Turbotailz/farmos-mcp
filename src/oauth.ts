@@ -214,11 +214,13 @@ export function loginPage(params: URLSearchParams, error?: string): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/icon.png" type="image/png">
   <title>farmOS MCP</title>
   <style>
     body { font: 16px/1.4 Georgia, serif; background: #e7efe4; color: #1c2b22; margin: 0; }
     main { max-width: 28rem; margin: 12vh auto; padding: 1.5rem; }
     h1 { font-size: 1.6rem; margin: 0 0 0.5rem; }
+    h1 img { vertical-align: middle; margin-right: 0.45rem; border-radius: 8px; }
     p { margin: 0 0 1rem; }
     label { display: block; font-size: 0.9rem; margin-bottom: 0.35rem; }
     input { width: 100%; box-sizing: border-box; padding: 0.6rem; font: inherit; margin-bottom: 0.7rem; }
@@ -228,7 +230,7 @@ export function loginPage(params: URLSearchParams, error?: string): string {
 </head>
 <body>
   <main>
-    <h1>farmOS MCP</h1>
+    <h1><img src="/icon.png" alt="" width="40" height="40"> farmOS</h1>
     <p>Sign in with your farmOS account. What you record is saved under your name.</p>
     ${message}
     <form method="post" action="/authorize">

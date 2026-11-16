@@ -3,6 +3,7 @@ WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 COPY bin bin
 COPY src src
+COPY assets assets
 RUN npm ci && npm run build && npm prune --omit=dev
 
 FROM node:22-alpine
@@ -13,6 +14,7 @@ ENV NODE_ENV=production \
 COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/assets ./assets
 USER node
 EXPOSE 8787
 CMD ["node", "dist/bin/cli.js", "--http"]

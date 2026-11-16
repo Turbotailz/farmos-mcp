@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { FarmClient, loginWithPassword, refreshFarmSession, type FarmActor, type FarmSession } from "./client.js";
+import { iconPng } from "./icon.js";
 import { singleFlight } from "./single-flight.js";
 import { loadConfig } from "./config.js";
 import { createMcpServer } from "./server.js";
@@ -69,6 +70,15 @@ async function route(
   }
   if (!originAllowed(req)) {
     rejectOrigin(req, res);
+    return;
+  }
+  if (req.method === "GET" && ["/favicon.ico", "/favicon.png", "/icon.png", "/apple-touch-icon.png"].includes(url.pathname)) {
+    res.writeHead(200, {
+      "Content-Type": "image/png",
+      "Cache-Control": "public, max-age=86400",
+      ...corsHeaders(req),
+    });
+    res.end(iconPng);
     return;
   }
   if (req.method === "GET" && url.pathname === "/health") {
@@ -291,6 +301,8 @@ function authorizationServerMetadata(base: string) {
     grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: ["none"],
+    logo_uri: `${base}/icon.png`,
+    service_documentation: "https://farmos.org",
   };
 }
 

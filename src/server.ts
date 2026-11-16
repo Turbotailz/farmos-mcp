@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { FarmClient } from "./client.js";
 import { loadConfig, VERSION } from "./config.js";
+import { iconDataUri, publicIconUrl } from "./icon.js";
 import { errorResult, textResult } from "./mcp-result.js";
 
 const INSTRUCTIONS = [
@@ -23,7 +24,19 @@ const limitSchema = z.number().int().min(1).max(50).optional().describe("Page si
 
 export function createMcpServer(client: FarmClient = new FarmClient(loadConfig())): McpServer {
   const server = new McpServer(
-    { name: "farmos-mcp", version: VERSION },
+    {
+      name: "farmos-mcp",
+      title: "farmOS",
+      version: VERSION,
+      description: "Read and record records in a farmOS instance.",
+      icons: [
+        {
+          src: publicIconUrl() ?? iconDataUri(),
+          mimeType: "image/png",
+          sizes: ["128x128"],
+        },
+      ],
+    },
     { instructions: INSTRUCTIONS, maxToolInputElements: 200 },
   );
 
